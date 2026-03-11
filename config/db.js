@@ -6,6 +6,9 @@ const dbConfig = {
   password: process.env.DB_PASSWORD || "",
   database: process.env.DB_NAME || "crypto_db",
   port: parseInt(process.env.DB_PORT) || 3307,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
 };
 
 // TiDB Cloud / Aiven / Railway require SSL in production
@@ -16,13 +19,15 @@ if (process.env.DB_SSL === "true") {
   };
 }
 
-const db = mysql.createConnection(dbConfig);
+const db = mysql.createPool(dbConfig);
 
-db.connect((err) => {
+// Test connection
+db.getConnection((err, conn) => {
   if (err) {
-    console.log("Database connection failed:", err);
+    console.log("Database connection failed:", err.message);
   } else {
-    console.log("MySQL Connected");
+    console.log("MySQL Connected (pool)");
+    conn.release();
   }
 });
 
