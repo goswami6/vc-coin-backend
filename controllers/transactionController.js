@@ -14,13 +14,17 @@ const getUserFromToken = (req) => {
   }
 };
 
-// Safe query: returns empty array if table doesn't exist
+// Safe query: returns empty array if table/column doesn't exist
 const safeQuery = async (sql, params = []) => {
   try {
     const [rows] = await dbPromise.query(sql, params);
     return rows;
   } catch (e) {
-    if (e.code === 'ER_NO_SUCH_TABLE' || (e.message && e.message.includes("doesn't exist"))) {
+    if (
+      e.code === 'ER_NO_SUCH_TABLE' ||
+      e.code === 'ER_BAD_FIELD_ERROR' ||
+      (e.message && (e.message.includes("doesn't exist") || e.message.includes('Unknown column')))
+    ) {
       return [];
     }
     throw e;
@@ -40,8 +44,8 @@ exports.myTransactions = async (req, res) => {
       safeQuery(`SELECT id, amount, status, 'investment' AS type, plan_name AS detail, createdAt FROM user_investments WHERE user_id = ?`, [uid]),
       safeQuery(`SELECT t.id, t.amount, 'completed' AS status, 'transfer_sent' AS type, u.name AS detail, t.createdAt FROM p2p_transfers t JOIN users u ON u.id = t.receiver_id WHERE t.sender_id = ?`, [uid]),
       safeQuery(`SELECT t.id, t.amount, 'completed' AS status, 'transfer_received' AS type, u.name AS detail, t.createdAt FROM p2p_transfers t JOIN users u ON u.id = t.sender_id WHERE t.receiver_id = ?`, [uid]),
-      safeQuery("SELECT id, amount, status, 'marketplace_sell' AS type, CONCAT(price_per_vc,' \u20B9/VC') AS detail, createdAt FROM sell_orders WHERE seller_id = ?", [uid]),
-      safeQuery("SELECT id, amount, status, 'marketplace_buy' AS type, CONCAT(price_per_vc,' \u20B9/VC') AS detail, createdAt FROM sell_orders WHERE buyer_id = ?", [uid]),
+      safeQuery("SELECT id, COALESCE(vc_amount, amount) AS amount, status, 'marketplace_sell' AS type, CONCAT(price_per_vc,' \u20B9/VC') AS detail, createdAt FROM sell_orders WHERE seller_id = ?", [uid]),
+      safeQuery("SELECT id, COALESCE(vc_amount, amount) AS amount, status, 'marketplace_buy' AS type, CONCAT(price_per_vc,' \u20B9/VC') AS detail, createdAt FROM sell_orders WHERE buyer_id = ?", [uid]),
     ]);
 
     const all = [
@@ -74,7 +78,7 @@ exports.allTransactions = async (req, res) => {
       safeQuery(`SELECT w.id, w.amount, w.status, 'withdrawal' AS type, w.method AS detail, w.createdAt, u.name AS user_name, u.email AS user_email FROM withdrawals w JOIN users u ON u.id = w.user_id`),
       safeQuery(`SELECT i.id, i.amount, i.status, 'investment' AS type, i.plan_name AS detail, i.createdAt, u.name AS user_name, u.email AS user_email FROM user_investments i JOIN users u ON u.id = i.user_id`),
       safeQuery("SELECT t.id, t.amount, 'completed' AS status, 'transfer' AS type, CONCAT(s.name, ' \u2192 ', r.name) AS detail, t.createdAt, s.name AS user_name, s.email AS user_email FROM p2p_transfers t JOIN users s ON s.id = t.sender_id JOIN users r ON r.id = t.receiver_id"),
-      safeQuery("SELECT o.id, o.amount, o.status, 'marketplace' AS type, CONCAT(o.price_per_vc,' \u20B9/VC') AS detail, o.createdAt, u.name AS user_name, u.email AS user_email FROM sell_orders o JOIN users u ON u.id = o.seller_id"),
+      safeQuery("SELECT o.id, COALESCE(o.vc_amount, o.amount) AS amount, o.status, 'marketplace' AS type, CONCAT(o.price_per_vc,' \u20B9/VC') AS detail, o.createdAt, u.name AS user_name, u.email AS user_email FROM sell_orders o JOIN users u ON u.id = o.seller_id"),
     ]);
 
     const all = [

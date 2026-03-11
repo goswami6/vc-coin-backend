@@ -37,6 +37,12 @@ const ensureMarketplaceTable = async () => {
       `ALTER TABLE sell_orders ADD COLUMN payment_proof VARCHAR(255) DEFAULT NULL`
     );
   } catch { }
+  // Rename vc_amount → amount if old schema
+  try {
+    await dbPromise.query(
+      `ALTER TABLE sell_orders CHANGE COLUMN vc_amount amount DECIMAL(15,2) NOT NULL`
+    );
+  } catch { }
 };
 
 const createSellOrder = async ({ seller_id, amount, price_per_vc, seller_upi }) => {
