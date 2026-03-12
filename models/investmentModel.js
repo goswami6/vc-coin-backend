@@ -15,7 +15,7 @@ const ensureInvestmentsTable = async () => {
       start_date DATE NOT NULL,
       end_date DATE NOT NULL,
       status ENUM('active','completed','cancelled') DEFAULT 'active',
-      auto_renew TINYINT(1) DEFAULT 1,
+      auto_renew TINYINT(1) DEFAULT 0,
       renewal_count INT DEFAULT 0,
       original_investment_id INT DEFAULT NULL,
       createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -24,7 +24,7 @@ const ensureInvestmentsTable = async () => {
   `);
   // Add columns if missing (for existing tables)
   const cols = ['auto_renew', 'renewal_count', 'original_investment_id'];
-  const defaults = ["TINYINT(1) DEFAULT 1", "INT DEFAULT 0", "INT DEFAULT NULL"];
+  const defaults = ["TINYINT(1) DEFAULT 0", "INT DEFAULT 0", "INT DEFAULT NULL"];
   for (let i = 0; i < cols.length; i++) {
     try {
       await dbPromise.query(`ALTER TABLE user_investments ADD COLUMN ${cols[i]} ${defaults[i]}`);
@@ -39,8 +39,8 @@ const createInvestment = async ({ user_id, plan_id, plan_name, amount, daily_roi
   end_date.setDate(end_date.getDate() + tenure_days);
 
   const [result] = await dbPromise.query(
-    `INSERT INTO user_investments (user_id, plan_id, plan_name, amount, daily_roi, tenure_days, total_return, start_date, end_date)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO user_investments (user_id, plan_id, plan_name, amount, daily_roi, tenure_days, total_return, start_date, end_date, auto_renew)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
     [user_id, plan_id, plan_name, amount, daily_roi, tenure_days, total_return,
       start_date.toISOString().split('T')[0], end_date.toISOString().split('T')[0]]
   );
