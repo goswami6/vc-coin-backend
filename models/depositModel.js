@@ -213,6 +213,7 @@ const getInrBalance = async (user_id) => {
 };
 
 module.exports = {
+  ensureDepositsTable,
   createDeposit,
   getDepositsByUser,
   getAllDeposits,
