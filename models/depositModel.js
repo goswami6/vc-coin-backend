@@ -126,7 +126,8 @@ const getWalletBalance = async (user_id) => {
     // table doesn't exist yet
   }
 
-  return Number(dep[0].total) - invested + transferNet - sellFees - withdrawn + levelIncome;
+  const wallet = Number(dep[0].total) - invested + transferNet - sellFees - withdrawn + levelIncome;
+  return Math.max(0, wallet);
 };
 
 // Available balance (wallet - locked marketplace orders - pending withdrawals)
@@ -135,11 +136,17 @@ const getAvailableBalance = async (user_id) => {
 
   let marketLocked = 0;
   try {
-    const [rows] = await dbPromise.query(
-      `SELECT COALESCE(SUM(amount + fee_amount), 0) as total FROM sell_orders WHERE seller_id = ? AND status IN ('pending','approved','purchased')`,
-      [user_id]
-    );
-    marketLocked = Number(rows[0].total);
+    const [cols] = await dbPromise.query(`SHOW COLUMNS FROM sell_orders`);
+    const names = new Set(cols.map((c) => c.Field));
+    const amountCol = names.has('amount') ? 'amount' : (names.has('vc_amount') ? 'vc_amount' : null);
+    const feeExpr = names.has('fee_amount') ? 'COALESCE(fee_amount,0)' : '0';
+    if (amountCol) {
+      const [rows] = await dbPromise.query(
+        `SELECT COALESCE(SUM(${amountCol} + ${feeExpr}), 0) as total FROM sell_orders WHERE seller_id = ? AND status IN ('pending','approved','purchased')`,
+        [user_id]
+      );
+      marketLocked = Number(rows[0].total);
+    }
   } catch { }
 
   let pendingWithdrawals = 0;
@@ -151,22 +158,14 @@ const getAvailableBalance = async (user_id) => {
     pendingWithdrawals = Number(rows[0].total);
   } catch { }
 
-  // Approved withdrawals deducted from wallet
-  let approvedWithdrawals = 0;
-  try {
-    const [rows] = await dbPromise.query(
-      `SELECT COALESCE(SUM(amount), 0) as total FROM withdrawals WHERE user_id = ? AND status = 'approved'`,
-      [user_id]
-    );
-    approvedWithdrawals = Number(rows[0].total);
-  } catch { }
-
+  const safeWallet = Math.max(0, wallet);
+  const available = Math.max(0, safeWallet - marketLocked - pendingWithdrawals);
   return {
-    wallet: wallet - approvedWithdrawals,
-    available: wallet - approvedWithdrawals - marketLocked - pendingWithdrawals,
+    wallet: safeWallet,
+    available,
     marketLocked,
     pendingWithdrawals,
-    approvedWithdrawals,
+    approvedWithdrawals: 0,
   };
 };
 

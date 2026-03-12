@@ -8,8 +8,7 @@ const {
   getTotalWithdrawn,
   getPendingWithdrawals,
 } = require('../models/withdrawModel');
-const { getWalletBalance } = require('../models/depositModel');
-const { getLockedBalance } = require('../models/marketplaceModel');
+const { getAvailableBalance } = require('../models/depositModel');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'vc-coin-secret';
 
@@ -41,15 +40,12 @@ const requestWithdraw = async (req, res) => {
       return res.status(400).json({ message: 'Enter your payment details (UPI ID / Bank details).' });
     }
 
-    // Check available balance (wallet - locked marketplace orders - pending withdrawals)
-    const walletBalance = await getWalletBalance(decoded.sub);
-    const marketLocked = await getLockedBalance(decoded.sub);
-    const pendingW = await getPendingWithdrawals(decoded.sub);
-    const available = walletBalance - marketLocked - pendingW;
+    // Centralized available balance guard (already handles locks and pending withdrawals)
+    const { available } = await getAvailableBalance(decoded.sub);
 
     if (available < Number(amount)) {
       return res.status(400).json({
-        message: `Insufficient available balance. You have ${available.toFixed(2)} VC available.`,
+        message: `Insufficient balance. You have ${Math.max(0, available).toFixed(2)} VC available.`,
       });
     }
 

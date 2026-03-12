@@ -9,7 +9,7 @@ const {
   toggleAutoRenew,
   cancelInvestment,
 } = require('../models/investmentModel');
-const { getWalletBalance } = require('../models/depositModel');
+const { getAvailableBalance } = require('../models/depositModel');
 const { creditLevelIncome } = require('../models/levelIncomeModel');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'vc-coin-secret';
@@ -36,10 +36,10 @@ const invest = async (req, res) => {
       return res.status(400).json({ message: 'Plan ID and amount are required.' });
     }
 
-    // Check wallet balance
-    const balance = await getWalletBalance(decoded.sub);
-    if (balance < Number(amount)) {
-      return res.status(400).json({ message: 'Insufficient balance. Please deposit first.' });
+    // Check available balance (accounts for locks/pending withdrawals)
+    const { available } = await getAvailableBalance(decoded.sub);
+    if (available < Number(amount)) {
+      return res.status(400).json({ message: `Insufficient balance. You have ${Math.max(0, available).toFixed(2)} VC available.` });
     }
 
     const investment = await createInvestment({

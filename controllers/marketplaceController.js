@@ -8,9 +8,8 @@ const {
   updateSellOrderStatus,
   completeSellOrder,
   claimSellOrder,
-  getLockedBalance,
 } = require('../models/marketplaceModel');
-const { getWalletBalance } = require('../models/depositModel');
+const { getAvailableBalance } = require('../models/depositModel');
 const { createTransfer } = require('../models/transferModel');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'vc-coin-secret';
@@ -46,15 +45,13 @@ const createOrder = async (req, res) => {
       return res.status(400).json({ message: 'Enter your UPI ID.' });
     }
 
-    // Check available balance (wallet - locked in pending/approved orders)
-    const walletBalance = await getWalletBalance(decoded.sub);
-    const locked = await getLockedBalance(decoded.sub);
-    const available = walletBalance - locked;
+    // Check available balance (centralized and non-negative)
+    const { available } = await getAvailableBalance(decoded.sub);
     const needed = Number(amount) * 1.05; // amount + 5% fee
 
     if (available < needed) {
       return res.status(400).json({
-        message: `Insufficient balance. You need ${needed.toFixed(2)} VC (${Number(amount).toFixed(2)} + 5% fee). Available: ${available.toFixed(2)} VC.`,
+        message: `Insufficient balance. You need ${needed.toFixed(2)} VC (${Number(amount).toFixed(2)} + 5% fee). Available: ${Math.max(0, available).toFixed(2)} VC.`,
       });
     }
 
@@ -79,7 +76,7 @@ const myOrders = async (req, res) => {
     if (!decoded) return res.status(401).json({ message: 'Unauthorized' });
 
     const orders = await getSellOrdersByUser(decoded.sub);
-    const locked = await getLockedBalance(decoded.sub);
+    const { marketLocked: locked } = await getAvailableBalance(decoded.sub);
     res.json({ orders, lockedBalance: locked });
   } catch (error) {
     console.error('My sell orders error:', error);

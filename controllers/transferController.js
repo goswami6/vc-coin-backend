@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { createTransfer, getTransfersByUser, getTransferBalance } = require('../models/transferModel');
-const { getWalletBalance } = require('../models/depositModel');
+const { getAvailableBalance } = require('../models/depositModel');
 const { findUserByEmail, findUserByMobile } = require('../models/userModel');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'vc-coin-secret';
@@ -45,10 +45,10 @@ const send = async (req, res) => {
       return res.status(400).json({ message: 'You cannot transfer to yourself.' });
     }
 
-    // Check balance
-    const balance = await getWalletBalance(decoded.sub);
-    if (balance < Number(amount)) {
-      return res.status(400).json({ message: `Insufficient balance. You have ${balance.toFixed(2)} VC.` });
+    // Check available balance (prevents overspending into negative)
+    const { available } = await getAvailableBalance(decoded.sub);
+    if (available < Number(amount)) {
+      return res.status(400).json({ message: `Insufficient balance. You have ${Math.max(0, available).toFixed(2)} VC.` });
     }
 
     const transfer = await createTransfer({
