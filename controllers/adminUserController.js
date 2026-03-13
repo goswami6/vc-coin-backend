@@ -54,8 +54,11 @@ const getUserDetail = async (req, res) => {
     const user = await findUserById(userId);
     if (!user) return res.status(404).json({ message: 'User not found' });
 
-    const balance = await getAvailableBalance(userId);
-    const depositStats = await getDepositStats(userId);
+    let balance = { wallet: 0, available: 0, marketLocked: 0, pendingWithdrawals: 0 };
+    try { balance = await getAvailableBalance(userId); } catch (e) { console.error('balance error:', e.message); }
+
+    let depositStats = { totalDeposited: 0, totalCount: 0, pendingAmount: 0, pendingCount: 0 };
+    try { depositStats = await getDepositStats(userId); } catch (e) { console.error('depositStats error:', e.message); }
 
     // Investment stats
     let investmentStats = { activeCount: 0, activeAmount: 0, totalCount: 0, totalAmount: 0 };
