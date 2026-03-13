@@ -57,10 +57,23 @@ const createSellOrder = async ({ seller_id, amount, price_per_vc, seller_upi }) 
   const fee_amount = (Number(amount) * fee_percent) / 100;
   const net_amount = Number(amount) - fee_amount;
 
+  // Detect which columns exist to handle old schemas
+  const [cols] = await dbPromise.query(`SHOW COLUMNS FROM sell_orders`);
+  const colSet = new Set(cols.map((c) => c.Field));
+
+  const columns = ['seller_id', 'amount', 'price_per_vc'];
+  const values = [seller_id, amount, price_per_vc];
+
+  if (colSet.has('total_price')) { columns.push('total_price'); values.push(total_price); }
+  if (colSet.has('fee_percent')) { columns.push('fee_percent'); values.push(fee_percent); }
+  if (colSet.has('fee_amount')) { columns.push('fee_amount'); values.push(fee_amount); }
+  if (colSet.has('net_amount')) { columns.push('net_amount'); values.push(net_amount); }
+  if (colSet.has('seller_upi')) { columns.push('seller_upi'); values.push(seller_upi); }
+
+  const placeholders = columns.map(() => '?').join(', ');
   const [result] = await dbPromise.query(
-    `INSERT INTO sell_orders (seller_id, amount, price_per_vc, total_price, fee_percent, fee_amount, net_amount, seller_upi)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [seller_id, amount, price_per_vc, total_price, fee_percent, fee_amount, net_amount, seller_upi]
+    `INSERT INTO sell_orders (${columns.join(', ')}) VALUES (${placeholders})`,
+    values
   );
   return {
     id: result.insertId, seller_id, amount, price_per_vc,
