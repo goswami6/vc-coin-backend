@@ -42,6 +42,8 @@ const ensureMarketplaceTable = async () => {
   try { await dbPromise.query(`ALTER TABLE sell_orders ADD COLUMN fee_percent DECIMAL(5,2) DEFAULT 5.00`); } catch { }
   try { await dbPromise.query(`ALTER TABLE sell_orders ADD COLUMN fee_amount DECIMAL(15,2) DEFAULT 0`); } catch { }
   try { await dbPromise.query(`ALTER TABLE sell_orders ADD COLUMN net_amount DECIMAL(15,2) DEFAULT 0`); } catch { }
+  // Ensure admin_note column exists
+  try { await dbPromise.query(`ALTER TABLE sell_orders ADD COLUMN admin_note TEXT DEFAULT NULL`); } catch { }
   // Rename vc_amount → amount if old schema
   try {
     await dbPromise.query(
@@ -130,10 +132,21 @@ const getAllSellOrders = async () => {
 };
 
 const updateSellOrderStatus = async (id, status, admin_note) => {
-  await dbPromise.query(
-    `UPDATE sell_orders SET status = ?, admin_note = ? WHERE id = ?`,
-    [status, admin_note || null, id]
-  );
+  await ensureMarketplaceTable();
+  // Check if admin_note column exists
+  const [cols] = await dbPromise.query(`SHOW COLUMNS FROM sell_orders`);
+  const colSet = new Set(cols.map((c) => c.Field));
+  if (colSet.has('admin_note')) {
+    await dbPromise.query(
+      `UPDATE sell_orders SET status = ?, admin_note = ? WHERE id = ?`,
+      [status, admin_note || null, id]
+    );
+  } else {
+    await dbPromise.query(
+      `UPDATE sell_orders SET status = ? WHERE id = ?`,
+      [status, id]
+    );
+  }
   return getSellOrderById(id);
 };
 
@@ -156,8 +169,11 @@ const claimSellOrder = async (id, buyer_id, payment_proof) => {
 // Get total VC locked in pending/approved sell orders for a user (includes fee)
 const getLockedBalance = async (user_id) => {
   await ensureMarketplaceTable();
+  const [cols] = await dbPromise.query(`SHOW COLUMNS FROM sell_orders`);
+  const colSet = new Set(cols.map((c) => c.Field));
+  const sumExpr = colSet.has('fee_amount') ? 'SUM(amount + fee_amount)' : 'SUM(amount)';
   const [rows] = await dbPromise.query(
-    `SELECT COALESCE(SUM(amount + fee_amount), 0) as total FROM sell_orders WHERE seller_id = ? AND status IN ('pending','approved','purchased')`,
+    `SELECT COALESCE(${sumExpr}, 0) as total FROM sell_orders WHERE seller_id = ? AND status IN ('pending','approved','purchased')`,
     [user_id]
   );
   return Number(rows[0].total);

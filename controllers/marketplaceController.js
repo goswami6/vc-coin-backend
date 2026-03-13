@@ -153,9 +153,9 @@ const adminListAll = async (req, res) => {
       else if (o.status === 'purchased') purchased++;
       else if (o.status === 'completed') {
         completed++;
-        totalVolume += Number(o.amount);
-        totalFees += Number(o.fee_amount);
-        totalRevenue += Number(o.total_price);
+        totalVolume += Number(o.amount || 0);
+        totalFees += Number(o.fee_amount || 0);
+        totalRevenue += Number(o.total_price || 0);
       } else if (o.status === 'cancelled') cancelled++;
       else if (o.status === 'rejected') rejected++;
     });
