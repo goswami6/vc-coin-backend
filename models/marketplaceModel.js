@@ -37,6 +37,11 @@ const ensureMarketplaceTable = async () => {
       `ALTER TABLE sell_orders ADD COLUMN payment_proof VARCHAR(255) DEFAULT NULL`
     );
   } catch { }
+  // Ensure fee columns exist
+  try { await dbPromise.query(`ALTER TABLE sell_orders ADD COLUMN total_price DECIMAL(15,2) DEFAULT 0`); } catch { }
+  try { await dbPromise.query(`ALTER TABLE sell_orders ADD COLUMN fee_percent DECIMAL(5,2) DEFAULT 5.00`); } catch { }
+  try { await dbPromise.query(`ALTER TABLE sell_orders ADD COLUMN fee_amount DECIMAL(15,2) DEFAULT 0`); } catch { }
+  try { await dbPromise.query(`ALTER TABLE sell_orders ADD COLUMN net_amount DECIMAL(15,2) DEFAULT 0`); } catch { }
   // Rename vc_amount → amount if old schema
   try {
     await dbPromise.query(
