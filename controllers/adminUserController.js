@@ -128,5 +128,20 @@ const addWallet = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+// Admin: impersonate user (get JWT for user)
+const impersonateUser = async (req, res) => {
+  try {
+    if (!getAdmin(req)) return res.status(403).json({ message: 'Admin only' });
+    const userId = parseInt(req.params.id, 10);
+    if (!userId) return res.status(400).json({ message: 'Invalid user ID' });
+    const user = await findUserById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    const token = jwt.sign({ sub: user.id, email: user.email, mobile: user.mobile, user_type: user.user_type || 'user' }, JWT_SECRET, { expiresIn: '1h' });
+    res.json({ token });
+  } catch (err) {
+    console.error('impersonateUser error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
 
-module.exports = { listUsers, toggleBlock, getUserDetail, addWallet };
+module.exports = { listUsers, toggleBlock, getUserDetail, addWallet, impersonateUser };
