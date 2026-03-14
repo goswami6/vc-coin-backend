@@ -36,6 +36,15 @@ const invest = async (req, res) => {
       return res.status(400).json({ message: 'Plan ID and amount are required.' });
     }
 
+    // Fetch plan to check min amount
+    const plan = await require('../models/planModel').getPlanById(plan_id);
+    if (!plan) {
+      return res.status(400).json({ message: 'Invalid plan.' });
+    }
+    if (Number(amount) < Number(plan.investment_amount)) {
+      return res.status(400).json({ message: `Minimum investment for this plan is ${plan.investment_amount} VC.` });
+    }
+
     // Check available balance (accounts for locks/pending withdrawals)
     const { available } = await getAvailableBalance(decoded.sub);
     if (available < Number(amount)) {
