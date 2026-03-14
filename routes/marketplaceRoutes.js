@@ -7,7 +7,9 @@ const {
   myOrders,
   marketplace,
   buyOrder,
+  myPurchases,
   adminListAll,
+  adminUpdatePurchaseStatus,
   adminUpdateStatus,
 } = require('../controllers/marketplaceController');
 
@@ -15,19 +17,21 @@ const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, path.join(__dirname, '..', 'uploads')),
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
-    cb(null, `market-proof-${Date.now()}${ext}`);
+    cb(null, `market-${Date.now()}${ext}`);
   },
 });
 const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
 
 // User routes
-router.post('/', createOrder);
+router.post('/', upload.single('seller_qr'), createOrder);
 router.get('/my', myOrders);
 router.get('/browse', marketplace);
 router.post('/buy/:id', upload.single('screenshot'), buyOrder);
+router.get('/my-purchases', myPurchases);
 
 // Admin routes
 router.get('/all', adminListAll);
+router.put('/purchases/:id/status', adminUpdatePurchaseStatus);
 router.put('/:id/status', adminUpdateStatus);
 
 module.exports = router;

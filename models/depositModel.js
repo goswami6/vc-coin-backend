@@ -138,14 +138,39 @@ const getAvailableBalance = async (user_id) => {
   try {
     const [cols] = await dbPromise.query(`SHOW COLUMNS FROM sell_orders`);
     const names = new Set(cols.map((c) => c.Field));
-    const amountCol = names.has('amount') ? 'amount' : (names.has('vc_amount') ? 'vc_amount' : null);
-    const feeExpr = names.has('fee_amount') ? 'COALESCE(fee_amount,0)' : '0';
-    if (amountCol) {
-      const [rows] = await dbPromise.query(
-        `SELECT COALESCE(SUM(${amountCol} + ${feeExpr}), 0) as total FROM sell_orders WHERE seller_id = ? AND status IN ('pending','approved','purchased')`,
+
+    if (names.has('remaining_amount')) {
+      // New system: remaining in active orders + pending purchase amounts
+      let remaining = 0;
+      const [r1] = await dbPromise.query(
+        `SELECT COALESCE(SUM(remaining_amount), 0) as total FROM sell_orders WHERE seller_id = ? AND status = 'approved'`,
         [user_id]
       );
-      marketLocked = Number(rows[0].total);
+      remaining = Number(r1[0].total);
+
+      let pendingPurchaseAmt = 0;
+      try {
+        const [r2] = await dbPromise.query(
+          `SELECT COALESCE(SUM(p.amount), 0) as total
+           FROM marketplace_purchases p
+           JOIN sell_orders s ON p.sell_order_id = s.id
+           WHERE s.seller_id = ? AND p.status = 'pending'`,
+          [user_id]
+        );
+        pendingPurchaseAmt = Number(r2[0].total);
+      } catch { }
+
+      marketLocked = (remaining + pendingPurchaseAmt) * 1.05;
+    } else {
+      const amountCol = names.has('amount') ? 'amount' : (names.has('vc_amount') ? 'vc_amount' : null);
+      const feeExpr = names.has('fee_amount') ? 'COALESCE(fee_amount,0)' : '0';
+      if (amountCol) {
+        const [rows] = await dbPromise.query(
+          `SELECT COALESCE(SUM(${amountCol} + ${feeExpr}), 0) as total FROM sell_orders WHERE seller_id = ? AND status IN ('pending','approved','purchased')`,
+          [user_id]
+        );
+        marketLocked = Number(rows[0].total);
+      }
     }
   } catch { }
 

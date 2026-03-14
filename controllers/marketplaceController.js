@@ -6,8 +6,15 @@ const {
   getApprovedOrders,
   getAllSellOrders,
   updateSellOrderStatus,
-  completeSellOrder,
-  claimSellOrder,
+  createPurchase,
+  getPurchaseById,
+  getPurchasesBySellOrder,
+  getPurchasesByBuyer,
+  getAllPurchases,
+  updatePurchaseStatus,
+  restoreSellOrderAmount,
+  checkAndCompleteSellOrder,
+  getLockedBalance,
 } = require('../models/marketplaceModel');
 const { getAvailableBalance } = require('../models/depositModel');
 const { createTransfer } = require('../models/transferModel');
@@ -24,13 +31,14 @@ const getUserFromToken = (req) => {
   }
 };
 
-// User: create a sell order
+// User: create a sell order (auto-approved, with optional QR upload)
 const createOrder = async (req, res) => {
   try {
     const decoded = getUserFromToken(req);
     if (!decoded) return res.status(401).json({ message: 'Unauthorized' });
 
     const { amount, price_per_vc, seller_upi } = req.body;
+    const seller_qr = req.file ? req.file.filename : null;
 
     if (!amount || Number(amount) <= 0) {
       return res.status(400).json({ message: 'Enter a valid VC amount.' });
@@ -41,13 +49,12 @@ const createOrder = async (req, res) => {
     if (!price_per_vc || Number(price_per_vc) <= 0) {
       return res.status(400).json({ message: 'Enter a valid price per VC.' });
     }
-    if (!seller_upi || !seller_upi.trim()) {
-      return res.status(400).json({ message: 'Enter your UPI ID.' });
+    if (!seller_upi && !seller_qr) {
+      return res.status(400).json({ message: 'Provide UPI ID or QR code image.' });
     }
 
-    // Check available balance (centralized and non-negative)
     const { available } = await getAvailableBalance(decoded.sub);
-    const needed = Number(amount) * 1.05; // amount + 5% fee
+    const needed = Number(amount) * 1.05;
 
     if (available < needed) {
       return res.status(400).json({
@@ -59,32 +66,40 @@ const createOrder = async (req, res) => {
       seller_id: decoded.sub,
       amount: Number(amount),
       price_per_vc: Number(price_per_vc),
-      seller_upi: seller_upi.trim(),
+      seller_upi: seller_upi ? seller_upi.trim() : null,
+      seller_qr,
     });
 
-    res.status(201).json({ order, message: 'Sell order submitted! Waiting for admin approval.' });
+    res.status(201).json({ order, message: 'Sell order listed on marketplace!' });
   } catch (error) {
     console.error('Create sell order error:', error);
     res.status(500).json({ message: 'Failed to create sell order.' });
   }
 };
 
-// User: my sell orders
+// User: my sell orders (with purchases on each order)
 const myOrders = async (req, res) => {
   try {
     const decoded = getUserFromToken(req);
     if (!decoded) return res.status(401).json({ message: 'Unauthorized' });
 
     const orders = await getSellOrdersByUser(decoded.sub);
-    const { marketLocked: locked } = await getAvailableBalance(decoded.sub);
-    res.json({ orders, lockedBalance: locked });
+    const ordersWithPurchases = await Promise.all(
+      orders.map(async (o) => {
+        const purchases = await getPurchasesBySellOrder(o.id);
+        return { ...o, purchases };
+      })
+    );
+
+    const locked = await getLockedBalance(decoded.sub);
+    res.json({ orders: ordersWithPurchases, lockedBalance: locked });
   } catch (error) {
     console.error('My sell orders error:', error);
     res.status(500).json({ message: 'Failed to fetch sell orders.' });
   }
 };
 
-// User: browse marketplace (approved orders)
+// User: browse marketplace (approved orders with remaining VC)
 const marketplace = async (req, res) => {
   try {
     const decoded = getUserFromToken(req);
@@ -98,35 +113,42 @@ const marketplace = async (req, res) => {
   }
 };
 
-// User: buy from an approved sell order (upload payment proof screenshot)
+// User: buy partial amount from a sell order (upload payment proof)
 const buyOrder = async (req, res) => {
   try {
     const decoded = getUserFromToken(req);
     if (!decoded) return res.status(401).json({ message: 'Unauthorized' });
 
     const { id } = req.params;
+    const { amount } = req.body;
     const order = await getSellOrderById(id);
 
-    if (!order) {
-      return res.status(404).json({ message: 'Sell order not found.' });
-    }
-    if (order.status !== 'approved') {
-      return res.status(400).json({ message: 'This order is no longer available.' });
-    }
-    if (order.seller_id === decoded.sub) {
-      return res.status(400).json({ message: 'You cannot buy your own order.' });
+    if (!order) return res.status(404).json({ message: 'Sell order not found.' });
+    if (order.status !== 'approved') return res.status(400).json({ message: 'This order is no longer available.' });
+    if (order.seller_id === decoded.sub) return res.status(400).json({ message: 'You cannot buy your own order.' });
+
+    const buyAmount = Number(amount);
+    if (!buyAmount || buyAmount <= 0) return res.status(400).json({ message: 'Enter a valid VC amount.' });
+
+    const remaining = Number(order.remaining_amount || order.amount);
+    if (buyAmount > remaining) {
+      return res.status(400).json({ message: `Only ${remaining.toFixed(2)} VC available in this order.` });
     }
 
     const payment_proof = req.file ? req.file.filename : null;
-    if (!payment_proof) {
-      return res.status(400).json({ message: 'Please upload payment screenshot.' });
-    }
+    if (!payment_proof) return res.status(400).json({ message: 'Please upload payment screenshot.' });
 
-    // Claim the order - mark as purchased, set buyer_id and payment proof
-    await claimSellOrder(order.id, decoded.sub, payment_proof);
+    const purchase = await createPurchase({
+      sell_order_id: order.id,
+      buyer_id: decoded.sub,
+      amount: buyAmount,
+      price_per_vc: Number(order.price_per_vc),
+      payment_proof,
+    });
 
     res.json({
-      message: `Payment proof submitted! Admin will verify and ${Number(order.amount).toFixed(2)} VC will be added to your wallet.`,
+      purchase,
+      message: `Purchase submitted! Admin will verify payment and ${buyAmount.toFixed(2)} VC will be added to your wallet.`,
     });
   } catch (error) {
     console.error('Buy order error:', error);
@@ -134,7 +156,21 @@ const buyOrder = async (req, res) => {
   }
 };
 
-// Admin: list all sell orders
+// User: my purchases (as buyer)
+const myPurchases = async (req, res) => {
+  try {
+    const decoded = getUserFromToken(req);
+    if (!decoded) return res.status(401).json({ message: 'Unauthorized' });
+
+    const purchases = await getPurchasesByBuyer(decoded.sub);
+    res.json({ purchases });
+  } catch (error) {
+    console.error('My purchases error:', error);
+    res.status(500).json({ message: 'Failed to fetch purchases.' });
+  }
+};
+
+// Admin: list all sell orders + all purchases + stats
 const adminListAll = async (req, res) => {
   try {
     const decoded = getUserFromToken(req);
@@ -143,26 +179,30 @@ const adminListAll = async (req, res) => {
     }
 
     const orders = await getAllSellOrders();
+    const purchases = await getAllPurchases();
 
-    // Stats
-    let pending = 0, approved = 0, purchased = 0, completed = 0, cancelled = 0, rejected = 0;
-    let totalVolume = 0, totalFees = 0, totalRevenue = 0;
+    let active = 0, completed = 0, cancelled = 0;
     orders.forEach((o) => {
-      if (o.status === 'pending') pending++;
-      else if (o.status === 'approved') approved++;
-      else if (o.status === 'purchased') purchased++;
-      else if (o.status === 'completed') {
-        completed++;
-        totalVolume += Number(o.amount || 0);
-        totalFees += Number(o.fee_amount || 0);
-        totalRevenue += Number(o.total_price || 0);
-      } else if (o.status === 'cancelled') cancelled++;
-      else if (o.status === 'rejected') rejected++;
+      if (o.status === 'approved') active++;
+      else if (o.status === 'completed') completed++;
+      else if (o.status === 'cancelled' || o.status === 'rejected') cancelled++;
+    });
+
+    let pendingPurchases = 0, approvedPurchases = 0, rejectedPurchases = 0;
+    let totalVolume = 0, totalRevenue = 0;
+    purchases.forEach((p) => {
+      if (p.status === 'pending') pendingPurchases++;
+      else if (p.status === 'approved') {
+        approvedPurchases++;
+        totalVolume += Number(p.amount || 0);
+        totalRevenue += Number(p.total_price || 0);
+      } else if (p.status === 'rejected') rejectedPurchases++;
     });
 
     res.json({
       orders,
-      stats: { pending, approved, purchased, completed, cancelled, rejected, totalVolume, totalFees, totalRevenue },
+      purchases,
+      stats: { active, completed, cancelled, pendingPurchases, approvedPurchases, rejectedPurchases, totalVolume, totalRevenue },
     });
   } catch (error) {
     console.error('Admin marketplace error:', error);
@@ -170,7 +210,53 @@ const adminListAll = async (req, res) => {
   }
 };
 
-// Admin: approve / reject / cancel / complete a sell order
+// Admin: approve/reject a purchase → on approve, transfer VC
+const adminUpdatePurchaseStatus = async (req, res) => {
+  try {
+    const decoded = getUserFromToken(req);
+    if (!decoded || decoded.user_type !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required.' });
+    }
+
+    const { id } = req.params;
+    const { status, admin_note } = req.body;
+
+    if (!['approved', 'rejected'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid status. Use approved or rejected.' });
+    }
+
+    const purchase = await getPurchaseById(id);
+    if (!purchase) return res.status(404).json({ message: 'Purchase not found.' });
+    if (purchase.status !== 'pending') {
+      return res.status(400).json({ message: 'Only pending purchases can be updated.' });
+    }
+
+    if (status === 'approved') {
+      await createTransfer({
+        sender_id: purchase.seller_id,
+        receiver_id: purchase.buyer_id,
+        amount: Number(purchase.amount),
+        note: `Marketplace purchase #${purchase.id} (Order #${purchase.sell_order_id})`,
+      });
+    }
+
+    if (status === 'rejected') {
+      await restoreSellOrderAmount(purchase.sell_order_id, Number(purchase.amount));
+    }
+
+    const updated = await updatePurchaseStatus(id, status, admin_note);
+
+    // Auto-complete sell order if fully sold with no pending purchases
+    await checkAndCompleteSellOrder(purchase.sell_order_id);
+
+    res.json({ purchase: updated, message: `Purchase ${status} successfully.` });
+  } catch (error) {
+    console.error('Admin update purchase error:', error);
+    res.status(500).json({ message: 'Failed to update purchase.' });
+  }
+};
+
+// Admin: cancel a sell order
 const adminUpdateStatus = async (req, res) => {
   try {
     const decoded = getUserFromToken(req);
@@ -181,37 +267,22 @@ const adminUpdateStatus = async (req, res) => {
     const { id } = req.params;
     const { status, admin_note } = req.body;
 
-    if (!['approved', 'rejected', 'cancelled', 'completed'].includes(status)) {
-      return res.status(400).json({ message: 'Invalid status.' });
+    if (!['cancelled'].includes(status)) {
+      return res.status(400).json({ message: 'Only cancellation is allowed for sell orders.' });
     }
 
     const order = await getSellOrderById(id);
     if (!order) return res.status(404).json({ message: 'Order not found.' });
-
     if (order.status === 'completed') {
       return res.status(400).json({ message: 'Cannot modify a completed order.' });
     }
 
-    // If completing: verify buyer exists and execute VC transfer
-    if (status === 'completed') {
-      if (!order.buyer_id) {
-        return res.status(400).json({ message: 'No buyer assigned. Order must be purchased first.' });
-      }
-      // Transfer full amount VC from seller to buyer (fee is deducted from seller separately)
-      await createTransfer({
-        sender_id: order.seller_id,
-        receiver_id: order.buyer_id,
-        amount: Number(order.amount),
-        note: `Marketplace purchase - Order #${order.id}`,
-      });
-    }
-
     const updated = await updateSellOrderStatus(id, status, admin_note);
-    res.json({ order: updated, message: `Order ${status} successfully.` });
+    res.json({ order: updated, message: 'Order cancelled successfully.' });
   } catch (error) {
     console.error('Admin update order error:', error);
     res.status(500).json({ message: 'Failed to update order.' });
   }
 };
 
-module.exports = { createOrder, myOrders, marketplace, buyOrder, adminListAll, adminUpdateStatus };
+module.exports = { createOrder, myOrders, marketplace, buyOrder, myPurchases, adminListAll, adminUpdatePurchaseStatus, adminUpdateStatus };
