@@ -8,6 +8,7 @@ const {
   marketplace,
   buyOrder,
   myPurchases,
+  sellerUpdatePurchaseStatus,
   adminListAll,
   adminUpdatePurchaseStatus,
   adminUpdateStatus,
@@ -28,6 +29,7 @@ router.get('/my', myOrders);
 router.get('/browse', marketplace);
 router.post('/buy/:id', upload.single('screenshot'), buyOrder);
 router.get('/my-purchases', myPurchases);
+router.put('/purchases/:id/seller-action', sellerUpdatePurchaseStatus);
 
 // Admin routes
 router.get('/all', adminListAll);

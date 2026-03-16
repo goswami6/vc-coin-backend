@@ -54,11 +54,11 @@ const createOrder = async (req, res) => {
     }
 
     const { available } = await getAvailableBalance(decoded.sub);
-    const needed = Number(amount) * 1.05;
+    const needed = Number(amount);
 
     if (available < needed) {
       return res.status(400).json({
-        message: `Insufficient balance. You need ${needed.toFixed(2)} VC (${Number(amount).toFixed(2)} + 5% fee). Available: ${Math.max(0, available).toFixed(2)} VC.`,
+        message: `Insufficient balance. You need ${needed.toFixed(2)} VC. Available: ${Math.max(0, available).toFixed(2)} VC.`,
       });
     }
 
@@ -256,6 +256,51 @@ const adminUpdatePurchaseStatus = async (req, res) => {
   }
 };
 
+// Seller: approve/reject a purchase on their own sell order
+const sellerUpdatePurchaseStatus = async (req, res) => {
+  try {
+    const decoded = getUserFromToken(req);
+    if (!decoded) return res.status(401).json({ message: 'Unauthorized' });
+
+    const { id } = req.params;
+    const { status, admin_note } = req.body;
+
+    if (!['approved', 'rejected'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid status. Use approved or rejected.' });
+    }
+
+    const purchase = await getPurchaseById(id);
+    if (!purchase) return res.status(404).json({ message: 'Purchase not found.' });
+    if (purchase.seller_id !== decoded.sub) {
+      return res.status(403).json({ message: 'This purchase does not belong to your sell order.' });
+    }
+    if (purchase.status !== 'pending') {
+      return res.status(400).json({ message: 'Only pending purchases can be updated.' });
+    }
+
+    if (status === 'approved') {
+      await createTransfer({
+        sender_id: purchase.seller_id,
+        receiver_id: purchase.buyer_id,
+        amount: Number(purchase.amount),
+        note: `Marketplace purchase #${purchase.id} (Order #${purchase.sell_order_id}) - Seller approved`,
+      });
+    }
+
+    if (status === 'rejected') {
+      await restoreSellOrderAmount(purchase.sell_order_id, Number(purchase.amount));
+    }
+
+    const updated = await updatePurchaseStatus(id, status, admin_note);
+    await checkAndCompleteSellOrder(purchase.sell_order_id);
+
+    res.json({ purchase: updated, message: `Purchase ${status} successfully.` });
+  } catch (error) {
+    console.error('Seller update purchase error:', error);
+    res.status(500).json({ message: 'Failed to update purchase.' });
+  }
+};
+
 // Admin: cancel a sell order
 const adminUpdateStatus = async (req, res) => {
   try {
@@ -285,4 +330,4 @@ const adminUpdateStatus = async (req, res) => {
   }
 };
 
-module.exports = { createOrder, myOrders, marketplace, buyOrder, myPurchases, adminListAll, adminUpdatePurchaseStatus, adminUpdateStatus };
+module.exports = { createOrder, myOrders, marketplace, buyOrder, myPurchases, sellerUpdatePurchaseStatus, adminListAll, adminUpdatePurchaseStatus, adminUpdateStatus };

@@ -313,7 +313,7 @@ const getLockedBalance = async (user_id) => {
     pendingPurchases = Number(rows[0].total);
   } catch { }
 
-  return (remaining + pendingPurchases) * 1.05;
+  return remaining + pendingPurchases;
 };
 
 module.exports = {

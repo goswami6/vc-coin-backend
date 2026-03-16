@@ -160,7 +160,7 @@ const getAvailableBalance = async (user_id) => {
         pendingPurchaseAmt = Number(r2[0].total);
       } catch { }
 
-      marketLocked = (remaining + pendingPurchaseAmt) * 1.05;
+      marketLocked = remaining + pendingPurchaseAmt;
     } else {
       const amountCol = names.has('amount') ? 'amount' : (names.has('vc_amount') ? 'vc_amount' : null);
       const feeExpr = names.has('fee_amount') ? 'COALESCE(fee_amount,0)' : '0';
