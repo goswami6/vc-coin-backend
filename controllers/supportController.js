@@ -79,7 +79,7 @@ const messages = async (req, res) => {
     if (!ticket) return res.status(404).json({ message: 'Ticket not found.' });
 
     // Only allow owner or admin
-    if (ticket.user_id !== decoded.sub && decoded.role !== 'admin') {
+    if (ticket.user_id !== decoded.sub && decoded.user_type !== 'admin') {
       return res.status(403).json({ message: 'Access denied.' });
     }
 
@@ -107,7 +107,7 @@ const sendMessage = async (req, res) => {
     if (!ticket) return res.status(404).json({ message: 'Ticket not found.' });
 
     // Only allow owner or admin
-    if (ticket.user_id !== decoded.sub && decoded.role !== 'admin') {
+    if (ticket.user_id !== decoded.sub && decoded.user_type !== 'admin') {
       return res.status(403).json({ message: 'Access denied.' });
     }
 
@@ -115,7 +115,7 @@ const sendMessage = async (req, res) => {
       return res.status(400).json({ message: 'This ticket is closed.' });
     }
 
-    const role = decoded.role === 'admin' ? 'admin' : 'user';
+    const role = decoded.user_type === 'admin' ? 'admin' : 'user';
     // Reopen if resolved and user replies
     if (role === 'user' && ticket.status === 'resolved') {
       await updateTicketStatus(id, 'open');
@@ -133,7 +133,7 @@ const sendMessage = async (req, res) => {
 const changeStatus = async (req, res) => {
   try {
     const decoded = getUserFromToken(req);
-    if (!decoded || decoded.role !== 'admin') return res.status(403).json({ message: 'Admin only.' });
+    if (!decoded || decoded.user_type !== 'admin') return res.status(403).json({ message: 'Admin only.' });
 
     const { id } = req.params;
     const { status } = req.body;
