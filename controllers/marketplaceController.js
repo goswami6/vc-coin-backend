@@ -20,6 +20,15 @@ const { getAvailableBalance } = require('../models/depositModel');
 const { createTransfer } = require('../models/transferModel');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'vc-coin-secret';
+const db = require('../config/db');
+const dbPromise = db.promise();
+
+const getAdminUserId = async () => {
+  const [rows] = await dbPromise.query(
+    `SELECT id FROM users WHERE user_type = 'admin' ORDER BY id ASC LIMIT 1`
+  );
+  return rows[0] ? rows[0].id : null;
+};
 
 const getUserFromToken = (req) => {
   const authHeader = req.headers.authorization;
@@ -58,7 +67,7 @@ const createOrder = async (req, res) => {
 
     if (available < needed) {
       return res.status(400).json({
-        message: `Insufficient balance. You need ${needed.toFixed(2)} VC. Available: ${Math.max(0, available).toFixed(2)} VC.`,
+        message: `Insufficient balance. You need ${needed.toFixed(2)} VC (including 5% platform fee on each sale). Available: ${Math.max(0, available).toFixed(2)} VC.`,
       });
     }
 
@@ -232,12 +241,26 @@ const adminUpdatePurchaseStatus = async (req, res) => {
     }
 
     if (status === 'approved') {
+      // Transfer VC to buyer
       await createTransfer({
         sender_id: purchase.seller_id,
         receiver_id: purchase.buyer_id,
         amount: Number(purchase.amount),
         note: `Marketplace purchase #${purchase.id} (Order #${purchase.sell_order_id})`,
       });
+      // Transfer 5% platform fee from seller to admin
+      const feeAmount = Number(purchase.amount) * 0.05;
+      if (feeAmount > 0) {
+        const adminId = await getAdminUserId();
+        if (adminId && adminId !== purchase.seller_id) {
+          await createTransfer({
+            sender_id: purchase.seller_id,
+            receiver_id: adminId,
+            amount: feeAmount,
+            note: `Platform fee (5%) for purchase #${purchase.id}`,
+          });
+        }
+      }
     }
 
     if (status === 'rejected') {
@@ -279,12 +302,26 @@ const sellerUpdatePurchaseStatus = async (req, res) => {
     }
 
     if (status === 'approved') {
+      // Transfer VC to buyer
       await createTransfer({
         sender_id: purchase.seller_id,
         receiver_id: purchase.buyer_id,
         amount: Number(purchase.amount),
         note: `Marketplace purchase #${purchase.id} (Order #${purchase.sell_order_id}) - Seller approved`,
       });
+      // Transfer 5% platform fee from seller to admin
+      const feeAmount = Number(purchase.amount) * 0.05;
+      if (feeAmount > 0) {
+        const adminId = await getAdminUserId();
+        if (adminId && adminId !== purchase.seller_id) {
+          await createTransfer({
+            sender_id: purchase.seller_id,
+            receiver_id: adminId,
+            amount: feeAmount,
+            note: `Platform fee (5%) for purchase #${purchase.id}`,
+          });
+        }
+      }
     }
 
     if (status === 'rejected') {
