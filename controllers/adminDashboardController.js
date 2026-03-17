@@ -115,6 +115,60 @@ exports.getDashboard = async (req, res) => {
       .sort((a, b) => new Date(b.time) - new Date(a.time))
       .slice(0, 8);
 
+    // Admin's own VC wallet
+    const adminDecoded = getAdmin(req);
+    const adminId = adminDecoded.sub;
+    let adminWallet = { balance: 0, feesEarned: 0 };
+    try {
+      // Total VC received via transfers (marketplace fees etc.)
+      let received = 0;
+      try {
+        const [r] = await dbPromise.query(
+          `SELECT COALESCE(SUM(amount), 0) AS total FROM p2p_transfers WHERE receiver_id = ?`, [adminId]
+        );
+        received = Number(r[0].total);
+      } catch { }
+
+      // Total VC sent via transfers
+      let sent = 0;
+      try {
+        const [s] = await dbPromise.query(
+          `SELECT COALESCE(SUM(amount), 0) AS total FROM p2p_transfers WHERE sender_id = ?`, [adminId]
+        );
+        sent = Number(s[0].total);
+      } catch { }
+
+      // Platform fees specifically earned
+      let feesEarned = 0;
+      try {
+        const [f] = await dbPromise.query(
+          `SELECT COALESCE(SUM(amount), 0) AS total FROM p2p_transfers WHERE receiver_id = ? AND note LIKE '%Platform fee%'`, [adminId]
+        );
+        feesEarned = Number(f[0].total);
+      } catch { }
+
+      // Admin deposits
+      let adminDeposits = 0;
+      try {
+        const [ad] = await dbPromise.query(
+          `SELECT COALESCE(SUM(amount), 0) AS total FROM deposits WHERE user_id = ? AND status = 'approved'`, [adminId]
+        );
+        adminDeposits = Number(ad[0].total);
+      } catch { }
+
+      // Admin withdrawals
+      let adminWithdrawn = 0;
+      try {
+        const [aw] = await dbPromise.query(
+          `SELECT COALESCE(SUM(amount), 0) AS total FROM withdrawals WHERE user_id = ? AND status = 'approved'`, [adminId]
+        );
+        adminWithdrawn = Number(aw[0].total);
+      } catch { }
+
+      const balance = adminDeposits + received - sent - adminWithdrawn;
+      adminWallet = { balance: Math.max(0, balance), feesEarned };
+    } catch { }
+
     res.json({
       users: { total: usersTotal.c, today: usersToday.c },
       deposits: {
@@ -134,6 +188,7 @@ exports.getDashboard = async (req, res) => {
       marketplace: { pending: mkPending.c },
       levelIncome: Number(levelIncome.total),
       vcRate: Number(vcRate?.setting_value || 0),
+      adminWallet,
       recentUsers,
       recentActivity,
     });
