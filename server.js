@@ -26,6 +26,7 @@ const reportRoutes = require('./routes/reportRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const adminDashboardRoutes = require('./routes/adminDashboardRoutes');
 const contactRoutes = require('./routes/contactRoutes');
+const supportRoutes = require('./routes/supportRoutes');
 
 const { autoRenewInvestments } = require('./models/investmentModel');
 const { creditLevelIncome } = require('./models/levelIncomeModel');
@@ -58,6 +59,7 @@ app.use('/api/admin/reports', reportRoutes);
 app.use('/api/admin/notifications', notificationRoutes);
 app.use('/api/admin/dashboard', adminDashboardRoutes);
 app.use('/api/contact', contactRoutes);
+app.use('/api/support', supportRoutes);
 
 const PORT = process.env.PORT || 5000;
 
