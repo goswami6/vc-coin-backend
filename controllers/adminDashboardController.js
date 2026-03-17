@@ -48,11 +48,11 @@ exports.getDashboard = async (req, res) => {
     await ensureDashboardTables();
 
     // Total users
-    const [usersRows] = await safeQuery(`SELECT COUNT(*) AS c FROM users`);
+    const usersRows = await safeQuery(`SELECT COUNT(*) AS c FROM users`);
     const usersTotal = usersRows[0] || { c: 0 };
 
     // Today's signups
-    const [usersTodayRows] = await safeQuery(`SELECT COUNT(*) AS c FROM users WHERE DATE(created_at) = CURDATE()`);
+    const usersTodayRows = await safeQuery(`SELECT COUNT(*) AS c FROM users WHERE DATE(created_at) = CURDATE()`);
     const usersToday = usersTodayRows[0] || { c: 0 };
 
     // Total deposits (approved)
