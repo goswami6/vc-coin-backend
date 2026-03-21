@@ -126,7 +126,31 @@ const getWalletBalance = async (user_id) => {
     // table doesn't exist yet
   }
 
-  const wallet = Number(dep[0].total) - invested + transferNet - sellFees - withdrawn + levelIncome;
+  // Daily ROI distributions
+  let roiEarned = 0;
+  try {
+    const [roi] = await dbPromise.query(
+      `SELECT COALESCE(SUM(amount), 0) as total FROM roi_distributions WHERE user_id = ?`,
+      [user_id]
+    );
+    roiEarned = Number(roi[0].total);
+  } catch {
+    // table doesn't exist yet
+  }
+
+  // Maturity returns (invested amount returned after tenure ends)
+  let maturityReturns = 0;
+  try {
+    const [mr] = await dbPromise.query(
+      `SELECT COALESCE(SUM(amount), 0) as total FROM maturity_returns WHERE user_id = ?`,
+      [user_id]
+    );
+    maturityReturns = Number(mr[0].total);
+  } catch {
+    // table doesn't exist yet
+  }
+
+  const wallet = Number(dep[0].total) - invested + transferNet - sellFees - withdrawn + levelIncome + roiEarned + maturityReturns;
   return Math.max(0, wallet);
 };
 

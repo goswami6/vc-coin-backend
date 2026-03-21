@@ -30,6 +30,7 @@ const supportRoutes = require('./routes/supportRoutes');
 
 const { autoRenewInvestments } = require('./models/investmentModel');
 const { creditLevelIncome } = require('./models/levelIncomeModel');
+const { distributeDailyRoi, creditMaturityReturn } = require('./models/roiModel');
 
 const app = express();
 
@@ -66,10 +67,10 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server listening on http://localhost:${PORT}`);
 
-  // Auto-renewal scheduler: runs every hour
+  // Auto-renewal & maturity scheduler: runs every hour
   const runAutoRenewal = async () => {
     try {
-      const renewed = await autoRenewInvestments();
+      const { renewed, matured } = await autoRenewInvestments();
       if (renewed.length > 0) {
         console.log(`Auto-renewed ${renewed.length} investment(s)`);
         for (const r of renewed) {
@@ -78,6 +79,15 @@ app.listen(PORT, () => {
           );
         }
       }
+      // Credit maturity returns for non-renewed completed investments
+      if (matured.length > 0) {
+        for (const m of matured) {
+          creditMaturityReturn(m).catch((err) =>
+            console.error('Maturity return credit error:', err)
+          );
+        }
+        console.log(`Credited maturity return for ${matured.length} investment(s)`);
+      }
     } catch (err) {
       console.error('Auto-renewal scheduler error:', err);
     }
@@ -85,4 +95,18 @@ app.listen(PORT, () => {
   // Run once on startup, then every hour
   runAutoRenewal();
   setInterval(runAutoRenewal, 60 * 60 * 1000);
+
+  // Daily ROI distribution scheduler: runs every 30 minutes
+  const runRoiDistribution = async () => {
+    try {
+      const distributed = await distributeDailyRoi();
+      if (distributed.length > 0) {
+        console.log(`Distributed daily ROI for ${distributed.length} investment(s)`);
+      }
+    } catch (err) {
+      console.error('ROI distribution scheduler error:', err);
+    }
+  };
+  runRoiDistribution();
+  setInterval(runRoiDistribution, 30 * 60 * 1000);
 });

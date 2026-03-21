@@ -117,9 +117,18 @@ const autoRenewInvestments = async () => {
   await ensureInvestmentsTable();
   const expired = await completeExpiredInvestments();
   const renewed = [];
+  const matured = []; // Non-renewed investments that completed
 
   for (const inv of expired) {
-    if (!inv.auto_renew) continue;
+    if (!inv.auto_renew) {
+      matured.push({
+        id: inv.id,
+        user_id: inv.user_id,
+        amount: Number(inv.amount),
+        plan_name: inv.plan_name,
+      });
+      continue;
+    }
 
     const start_date = new Date();
     const end_date = new Date();
@@ -147,7 +156,7 @@ const autoRenewInvestments = async () => {
     });
   }
 
-  return renewed;
+  return { renewed, matured };
 };
 
 // Toggle auto_renew for a specific investment
